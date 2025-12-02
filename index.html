@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nepal Gov Processes - Offline Guide</title>
+    <meta name="description" content="Offline videos for Passport, Citizenship, and NID processes in Nepal.">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <!-- For iOS Home Screen Icons -->
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+    <meta name="theme-color" content="#2f3d58">
+</head>
+<body>
+    <header>
+        <h1>🇳🇵 Nepal Government Process Guides</h1>
+        <p>Watch videos for Passport, Citizenship, and National ID procedures. Works offline.</p>
+    </header>
+
+    <main>
+        <section>
+            <h2>Available Video Guides</h2>
+            <div class="video-gallery" id="videoGallery">
+                <!-- Videos will be loaded here by app.js -->
+                <p>Loading video guides...</p>
+            </div>
+        </section>
+
+        <section class="offline-section" id="offlineStatus" style="display:none;">
+            <p>⚠️ You are offline. Downloaded videos are available.</p>
+        </section>
+    </main>
+
+    <!-- Video Player Modal (hidden by default) -->
+    <div id="videoModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <video id="modalVideo" controls style="width:100%;">
+                Your browser does not support the video tag.
+            </video>
+            <h3 id="videoTitle"></h3>
+            <p id="videoDescription"></p>
+            <button id="downloadBtn">Download for Offline</button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="app.js"></script>
+    <!-- Service Worker Registration -->
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js')
+                .then(registration => {
+                    console.log('✅ Service Worker registered with scope:', registration.scope);
+                    
+                    // Check if the service worker is controlling the page
+                    if (registration.active) {
+                        console.log('🎯 Service Worker is active and controlling the page');
+                    } else if (registration.installing) {
+                        console.log('🔄 Service Worker is installing...');
+                        registration.installing.addEventListener('statechange', () => {
+                            if (registration.installing.state === 'activated') {
+                                console.log('🎉 Service Worker activated! Page will refresh.');
+                                setTimeout(() => location.reload(), 1000);
+                            }
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.log('❌ Service Worker registration failed:', err);
+                    // Show user-friendly message
+                    showServiceWorkerError();
+                });
+        });
+    } else {
+        console.log('⚠️ Service Workers are not supported in this browser');
+    }
+    
+    function showServiceWorkerError() {
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #f44336;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            z-index: 10000;
+            font-family: sans-serif;
+        `;
+        errorDiv.innerHTML = `
+            <strong>⚠️ Offline Mode Not Ready</strong><br>
+            Please refresh the page to enable offline features.
+            <button onclick="location.reload()" style="margin-left: 10px; background: white; color: #f44336; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer;">
+                Refresh
+            </button>
+        `;
+        document.body.appendChild(errorDiv);
+        setTimeout(() => errorDiv.remove(), 10000);
+    }
+</script>
+</body>
+</html>

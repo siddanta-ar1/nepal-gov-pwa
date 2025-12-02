@@ -1,0 +1,26 @@
+{
+    "lang": "en-us",
+    "name": "Nepal Gov Process Guides",
+    "short_name": "GovGuides",
+    "description": "Offline video guides for government processes in Nepal.",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#2f3d58",
+    "theme_color": "#2f3d58",
+    "orientation": "any",
+    "icons": [
+        {
+            "src": "./icons/nepal.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "./icons/nepal1.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+
+        }
+    ]
+}
