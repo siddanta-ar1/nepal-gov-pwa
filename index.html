@@ -51,58 +51,46 @@
     <!-- Scripts -->
     <script src="app.js"></script>
     <!-- Service Worker Registration -->
-    <script>
+    <!-- Service Worker Registration -->
+<script>
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
+        window.addEventListener('load', function() {
+            console.log('📱 Checking for Service Worker support...');
+            
             navigator.serviceWorker.register('sw.js')
-                .then(registration => {
+                .then(function(registration) {
                     console.log('✅ Service Worker registered with scope:', registration.scope);
                     
-                    // Check if the service worker is controlling the page
-                    if (registration.active) {
-                        console.log('🎯 Service Worker is active and controlling the page');
-                    } else if (registration.installing) {
-                        console.log('🔄 Service Worker is installing...');
-                        registration.installing.addEventListener('statechange', () => {
-                            if (registration.installing.state === 'activated') {
-                                console.log('🎉 Service Worker activated! Page will refresh.');
-                                setTimeout(() => location.reload(), 1000);
-                            }
+                    // Check if service worker is controlling the page
+                    if (navigator.serviceWorker.controller) {
+                        console.log('🎯 Service Worker is controlling the page');
+                    } else {
+                        console.log('⏳ Service Worker registered but not controlling yet');
+                        // Refresh after service worker takes control
+                        registration.addEventListener('updatefound', function() {
+                            const newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', function() {
+                                if (newWorker.state === 'activated') {
+                                    console.log('🔄 Service Worker activated, refreshing page...');
+                                    setTimeout(() => location.reload(), 500);
+                                }
+                            });
                         });
                     }
                 })
-                .catch(err => {
-                    console.log('❌ Service Worker registration failed:', err);
-                    // Show user-friendly message
-                    showServiceWorkerError();
+                .catch(function(error) {
+                    console.log('❌ Service Worker registration failed:', error);
                 });
         });
     } else {
         console.log('⚠️ Service Workers are not supported in this browser');
-    }
-    
-    function showServiceWorkerError() {
-        const errorDiv = document.createElement('div');
-        errorDiv.style.cssText = `
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background: #f44336;
-            color: white;
-            padding: 10px 15px;
-            border-radius: 5px;
-            z-index: 10000;
-            font-family: sans-serif;
-        `;
-        errorDiv.innerHTML = `
-            <strong>⚠️ Offline Mode Not Ready</strong><br>
-            Please refresh the page to enable offline features.
-            <button onclick="location.reload()" style="margin-left: 10px; background: white; color: #f44336; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer;">
-                Refresh
-            </button>
-        `;
-        document.body.appendChild(errorDiv);
-        setTimeout(() => errorDiv.remove(), 10000);
+        // Still show the app, but without offline features
+        document.addEventListener('DOMContentLoaded', function() {
+            const gallery = document.getElementById('videoGallery');
+            if (gallery) {
+                gallery.innerHTML = '<p>Browser does not support offline features. Please use Chrome, Edge, or Firefox.</p>';
+            }
+        });
     }
 </script>
 </body>

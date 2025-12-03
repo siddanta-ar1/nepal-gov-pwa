@@ -10,7 +10,8 @@ const APP_FILES = [
     './style.css',
     './app.js',
     './manifest.json',
-    './icons/nepal.png',
+    './icons/icon-192.png',
+    './icons/icon-512.png',
     // Add fallback for missing files
     './fallback.html'
 ];
@@ -67,8 +68,9 @@ self.addEventListener('fetch', event => {
                 // Otherwise fetch from network
                 return fetch(event.request)
                     .then(networkResponse => {
-                        // Cache new resources (except videos)
-                        if (!event.request.url.includes('.mp4')) {
+                        // Only cache successful responses (status 200)
+                        // This fixes the "Partial response (status code 206)" error
+                        if (!event.request.url.includes('.mp4') && networkResponse.status === 200) {
                             const responseClone = networkResponse.clone();
                             caches.open(APP_CACHE)
                                 .then(cache => {
@@ -103,10 +105,14 @@ function handleVideoRequest(request) {
                     // Otherwise, fetch from network and cache it
                     return fetch(request)
                         .then(networkResponse => {
-                            // Cache the video for future offline use
-                            const responseClone = networkResponse.clone();
-                            cache.put(request, responseClone);
-                            console.log('📥 Video cached:', request.url);
+                            // Only cache full responses (not partial/206)
+                            if (networkResponse.status === 200) {
+                                const responseClone = networkResponse.clone();
+                                cache.put(request, responseClone);
+                                console.log('📥 Video cached:', request.url);
+                            } else {
+                                console.log('⚠️ Not caching partial response:', networkResponse.status);
+                            }
                             return networkResponse;
                         })
                         .catch(error => {
@@ -126,6 +132,8 @@ function handleVideoRequest(request) {
 
 // Message handling for video downloads
 self.addEventListener('message', event => {
+    console.log('📨 Service Worker received message:', event.data.action);
+    
     if (event.data.action === 'DOWNLOAD_VIDEO') {
         const videoUrl = event.data.videoUrl;
         console.log('⬇️ Download requested for:', videoUrl);
@@ -134,17 +142,29 @@ self.addEventListener('message', event => {
             .then(cache => {
                 return fetch(videoUrl)
                     .then(response => {
-                        cache.put(videoUrl, response);
-                        event.ports[0].postMessage({
-                            success: true,
-                            videoUrl: videoUrl
-                        });
+                        // Only cache full responses
+                        if (response.status === 200) {
+                            cache.put(videoUrl, response);
+                            console.log('✅ Video downloaded successfully');
+                        } else {
+                            console.log('⚠️ Not caching, response status:', response.status);
+                        }
+                        
+                        if (event.ports && event.ports[0]) {
+                            event.ports[0].postMessage({
+                                success: true,
+                                videoUrl: videoUrl
+                            });
+                        }
                     })
                     .catch(error => {
-                        event.ports[0].postMessage({
-                            success: false,
-                            error: error.message
-                        });
+                        console.log('❌ Download failed:', error);
+                        if (event.ports && event.ports[0]) {
+                            event.ports[0].postMessage({
+                                success: false,
+                                error: error.message
+                            });
+                        }
                     });
             });
     }
@@ -154,25 +174,53 @@ self.addEventListener('message', event => {
             .then(cache => cache.keys())
             .then(requests => {
                 const videos = requests.map(req => req.url);
-                event.ports[0].postMessage({ videos: videos });
+                console.log('📋 Downloaded videos:', videos);
+                if (event.ports && event.ports[0]) {
+                    event.ports[0].postMessage({ videos: videos });
+                }
             });
     }
-});
-
-// Add to the message event handler in sw.js
-if (event.data.action === 'DELETE_VIDEO') {
+    
+    if (event.data.action === 'DELETE_VIDEO') {
+        const videoUrl = event.data.videoUrl;
+        console.log('🗑️ Deleting video:', videoUrl);
+        
+        caches.open(VIDEO_CACHE)
+            .then(cache => cache.delete(videoUrl))
+            .then(deleted => {
+                console.log('✅ Video deleted:', deleted);
+                if (event.ports && event.ports[0]) {
+                    event.ports[0].postMessage({ 
+                        success: true,
+                        deleted: deleted
+                    });
+                }
+            });
+    }
+    
+    if (event.data.action === 'CLEAR_ALL_VIDEOS') {
+        console.log('🧹 Clearing all videos');
+        caches.delete(VIDEO_CACHE)
+            .then(() => caches.open(VIDEO_CACHE))
+            .then(() => {
+                console.log('✅ All videos cleared');
+                if (event.ports && event.ports[0]) {
+                    event.ports[0].postMessage({ success: true });
+                }
+            });
+    }
+    // Add this to the message event handler
+if (event.data.action === 'CHECK_VIDEO_STATUS') {
     const videoUrl = event.data.videoUrl;
     caches.open(VIDEO_CACHE)
-        .then(cache => cache.delete(videoUrl))
-        .then(() => {
-            event.ports[0].postMessage({ success: true });
+        .then(cache => cache.match(videoUrl))
+        .then(response => {
+            if (event.ports && event.ports[0]) {
+                event.ports[0].postMessage({ 
+                    isCached: !!response,
+                    videoUrl: videoUrl 
+                });
+            }
         });
 }
-
-if (event.data.action === 'CLEAR_ALL_VIDEOS') {
-    caches.delete(VIDEO_CACHE)
-        .then(() => caches.open(VIDEO_CACHE))
-        .then(() => {
-            event.ports[0].postMessage({ success: true });
-        });
-}
+});

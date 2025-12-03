@@ -63,38 +63,215 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('offline', updateOnlineStatus);
 });
 
-// Render video gallery
-function renderVideoGallery() {
-    videoGallery.innerHTML = '';
+// Render video gallery based on connectivity and download status
+async function renderVideoGallery() {
+    const gallery = document.getElementById('videoGallery');
+    if (!gallery) return;
     
-    videoLibrary.forEach(video => {
-        const videoCard = document.createElement('div');
-        videoCard.className = 'video-card';
-        videoCard.innerHTML = `
-            <div class="video-thumbnail">
-                <span style="font-size: 3rem;">▶️</span>
-                <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">
-                    ${video.duration}
+    gallery.innerHTML = '<p>Loading video guides...</p>';
+    
+    try {
+        // Get list of downloaded videos from service worker
+        const downloadedVideos = await getDownloadedVideos();
+        const isOnline = navigator.onLine;
+        
+        console.log('📱 Online status:', isOnline);
+        console.log('📥 Downloaded videos:', downloadedVideos);
+        
+        gallery.innerHTML = '';
+        
+        let videosToShow = [];
+        
+        if (!isOnline) {
+            // OFFLINE MODE: Show only downloaded videos
+            videoLibrary.forEach(video => {
+                if (downloadedVideos.includes(video.url) || 
+                    downloadedVideos.some(dl => dl.includes(video.id))) {
+                    videosToShow.push(video);
+                }
+            });
+            
+            // Update offline message
+            if (videosToShow.length === 0) {
+                gallery.innerHTML = `
+                    <div class="no-videos-message">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📶</div>
+                        <h3>No Videos Available Offline</h3>
+                        <p>You need to be online and download videos first.</p>
+                        <p>When online, click "Download for Offline" on any video.</p>
+                    </div>
+                `;
+                return;
+            }
+        } else {
+            // ONLINE MODE: Show all videos with download status
+            videosToShow = [...videoLibrary];
+        }
+        
+        // Render the filtered videos
+        videosToShow.forEach(video => {
+            const isDownloaded = downloadedVideos.includes(video.url) || 
+                                downloadedVideos.some(dl => dl.includes(video.id));
+            
+            const videoCard = document.createElement('div');
+            videoCard.className = 'video-card';
+            
+            let statusBadge = '';
+            if (!isOnline) {
+                statusBadge = '<div class="offline-badge">✅ Available Offline</div>';
+            } else if (isDownloaded) {
+                statusBadge = '<div class="downloaded-badge">✓ Downloaded</div>';
+            } else {
+                statusBadge = '<div class="download-badge">⬇️ Download Available</div>';
+            }
+            
+            videoCard.innerHTML = `
+                <div class="video-thumbnail">
+                    <span style="font-size: 3rem;">▶️</span>
+                    ${statusBadge}
+                    <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">
+                        ${video.duration}
+                    </div>
                 </div>
-            </div>
-            <div class="video-info">
-                <span class="video-tag">${video.category.toUpperCase()}</span>
-                <h3>${video.title}</h3>
-                <p>${video.description}</p>
-                <div style="display: flex; justify-content: space-between; margin-top: 15px;">
-                    <span style="color: #666; font-size: 0.9rem;">Size: ${video.size}</span>
-                    <span id="status-${video.id}" style="color: #4caf50; font-size: 0.9rem; font-weight: 600;">
-                        <span class="status-icon">⏳</span> Checking...
-                    </span>
+                <div class="video-info">
+                    <span class="video-tag">${video.category.toUpperCase()}</span>
+                    <h3>${video.title}</h3>
+                    <p>${video.description}</p>
+                    <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+                        <span style="color: #666; font-size: 0.9rem;">Size: ${video.size}</span>
+                        <span style="color: ${isDownloaded ? '#4caf50' : '#666'}; font-size: 0.9rem; font-weight: 600;">
+                            ${isDownloaded ? '✓ Ready offline' : (isOnline ? '⬇️ Download needed' : '❌ Not available')}
+                        </span>
+                    </div>
+                    <button class="btn" onclick="openVideoPlayer('${video.id}')" 
+                            style="margin-top: 10px; ${!isOnline && !isDownloaded ? 'background: #ccc; cursor: not-allowed;' : ''}"
+                            ${!isOnline && !isDownloaded ? 'disabled' : ''}>
+                        ${isOnline ? 'Watch Video' : (isDownloaded ? 'Watch Offline' : 'Not Available')}
+                    </button>
                 </div>
-                <button class="btn" onclick="openVideoPlayer('${video.id}')" style="margin-top: 10px;">
-                    Watch Video
-                </button>
-            </div>
-        `;
-        videoGallery.appendChild(videoCard);
+            `;
+            gallery.appendChild(videoCard);
+        });
+        
+    } catch (error) {
+        console.error('Error rendering video gallery:', error);
+        gallery.innerHTML = `<p class="error">Error loading videos: ${error.message}</p>`;
+    }
+}
+
+// FIXED: Get downloaded videos from service worker
+function getDownloadedVideos() {
+    return new Promise((resolve) => {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+            console.log('⚠️ Service Worker not ready yet');
+            resolve([]);
+            return;
+        }
+        
+        const messageChannel = new MessageChannel();
+        messageChannel.port1.onmessage = event => {
+            resolve(event.data.videos || []);
+        };
+        
+        navigator.serviceWorker.controller.postMessage(
+            { action: 'GET_DOWNLOADED_VIDEOS' },
+            [messageChannel.port2]
+        );
+        
+        // Timeout after 3 seconds
+        setTimeout(() => {
+            console.log('⏰ Timeout getting downloaded videos');
+            resolve([]);
+        }, 3000);
     });
 }
+
+// FIXED: Check if video is already cached
+async function checkIfVideoDownloaded(videoUrl) {
+    try {
+        if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
+            return false;
+        }
+        
+        return new Promise(resolve => {
+            const messageChannel = new MessageChannel();
+            messageChannel.port1.onmessage = event => {
+                const videos = event.data.videos || [];
+                resolve(videos.includes(videoUrl));
+            };
+            
+            navigator.serviceWorker.controller.postMessage(
+                { action: 'GET_DOWNLOADED_VIDEOS' },
+                [messageChannel.port2]
+            );
+            
+            setTimeout(() => resolve(false), 2000);
+        });
+    } catch (error) {
+        console.log('Error checking video:', error);
+        return false;
+    }
+}
+
+// FIXED: Wait for service worker to be ready before initializing
+document.addEventListener('DOMContentLoaded', async () => {
+    // Wait a bit for service worker to register
+    setTimeout(() => {
+        renderVideoGallery();
+        setupEventListeners();
+        checkOnlineStatus();
+        
+        // Only update download statuses if service worker is ready
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            updateDownloadStatuses();
+        }
+        
+        // Network status listeners
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+    }, 1000);
+});
+
+// Update online status function
+function updateOnlineStatus() {
+    const offlineStatus = document.getElementById('offlineStatus');
+    
+    if (!navigator.onLine) {
+        offlineStatus.style.display = 'block';
+        // Update message based on downloaded content
+        getDownloadedVideos().then(downloadedVideos => {
+            if (downloadedVideos.length > 0) {
+                offlineStatus.innerHTML = `
+                    <p>⚠️ You are offline. <strong>${downloadedVideos.length} video(s)</strong> available.</p>
+                    <p style="font-size: 0.9em; margin-top: 5px;">Only downloaded videos are shown below.</p>
+                `;
+            } else {
+                offlineStatus.innerHTML = `
+                    <p>⚠️ You are offline. No videos available.</p>
+                    <p style="font-size: 0.9em; margin-top: 5px;">Go online to download videos first.</p>
+                `;
+            }
+        });
+        
+        // Re-render gallery to show only downloaded videos
+        setTimeout(() => renderVideoGallery(), 500);
+    } else {
+        offlineStatus.style.display = 'none';
+        // Re-render gallery to show all videos
+        setTimeout(() => renderVideoGallery(), 500);
+    }
+}
+
+// Also update the event listeners
+window.addEventListener('online', () => {
+    console.log('✅ Back online - refreshing video list');
+    updateOnlineStatus();
+});
+
+window.addEventListener('offline', () => {
+    console.log('⚠️ Went offline - filtering video list');
+    updateOnlineStatus();
+});
 
 // Setup event listeners
 function setupEventListeners() {
@@ -118,14 +295,34 @@ async function openVideoPlayer(videoId) {
     currentVideo = videoLibrary.find(v => v.id === videoId);
     if (!currentVideo) return;
     
+    // Check if video is available (downloaded or online)
+    const isOnline = navigator.onLine;
+    const downloadedVideos = await getDownloadedVideos();
+    const isDownloaded = downloadedVideos.includes(currentVideo.url) || 
+                        downloadedVideos.some(dl => dl.includes(currentVideo.id));
+    
+    if (!isOnline && !isDownloaded) {
+        alert('❌ This video is not available offline.\n\nPlease go online to download it first.');
+        return;
+    }
+    
     modalVideo.src = currentVideo.url;
     videoTitle.textContent = currentVideo.title;
     videoDescription.textContent = currentVideo.description;
     videoModal.style.display = 'flex';
     
     // Check if video is already downloaded
-    const isDownloaded = await checkIfVideoDownloaded(currentVideo.url);
     updateDownloadButton(isDownloaded);
+    
+    // Show offline warning in modal if applicable
+    if (!isOnline) {
+        const offlineWarning = document.createElement('div');
+        offlineWarning.className = 'offline-warning';
+        offlineWarning.innerHTML = `
+            <p>⚠️ Playing from offline storage. Video quality may vary.</p>
+        `;
+        videoDescription.parentNode.insertBefore(offlineWarning, videoDescription.nextSibling);
+    }
 }
 
 // Close video player
